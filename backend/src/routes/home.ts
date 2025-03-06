@@ -4,6 +4,7 @@ import { ChatCollection, groupChatsCollection, groupMessagesCollection, Messages
 import jwt from 'jsonwebtoken'; 
 import dotenv from 'dotenv' ;
 import mongoose from "mongoose";
+import { isAdmin } from "../Services/home";
 const router = Router() ;
 dotenv.config() ;
 const JWT_SECRET = process.env.JWT_SECRET ;
@@ -136,6 +137,106 @@ router.get('/chat-unseen-Messages/:userId', AuthorizationCheck, async (req: Cust
 }) ;
 
 
+
+router.get('/messages/:otherUserId', AuthorizationCheck, async (req:CustomRequest, res: Response)=>{
+    try{
+
+        const otherUserId = req.params.otherUserId as string ;
+        const userId = req.user?.userId as string ;
+        const isPrivateChat = req.query.isPrivateChat ? JSON.parse(req.query.isPrivateChat as string) : false;
+        if(isPrivateChat){
+            const chats = await MessagesCollection.find({
+                $or: [{sender: otherUserId,reciever: userId},{sender: userId, reciever: otherUserId}]
+            }) ;
+            res.json({message: "got it", value: chats}) ;
+        }else{
+            const groupChats = await groupMessagesCollection.find({
+                reciever: otherUserId
+            }, {sender:1 ,message: 1,time: 1}) ;
+
+            res.json({message: "got it", value: groupChats}) ;
+        }
+
+    }catch(err){
+        console.log(`The error Occured in the chat-unseen-meesages ${err}`) ;
+        res.json({"message": "error occured", value: null}) ;
+    }
+}) ;
+
+//* when ever a new message is sent, in front-end we actually maintain a count
+// so we will increment that count , when ever user clicked a specific chat, then 
+// we will retrive all the messages of the chat
+
+
+router.post('/create-group', AuthorizationCheck, async (req: CustomRequest, res: Response)=>{
+    try{
+        const userId = req.user?.userId ;
+        const members = req.body.usersIds as string[];
+        const name = req.body.groupName as string;
+        const result = await groupChatsCollection.insertOne({
+            admin: userId,
+            participants: members.map(member => new mongoose.Types.ObjectId(member)) ,
+            name: name
+        }) ;
+        res.json({message: "The group was created successfully", value: result}) ;
+
+    }catch(err){
+        console.log(`The error occured in create-group ${err}`)
+        res.json({message: "error occured", value: null}) ;
+    }
+}) ;
+
+
+router.post('/add-member-to-group/:groupNo', AuthorizationCheck, async (req:CustomRequest, res:Response, next:NextFunction)=>{
+    try{
+        const userId = req.user?.userId as string;
+        const otherUserIds = req.body.userId as string[];
+        const groupId = req.params.groupNo as string;
+        if(await isAdmin(userId,groupId)){
+            // know we are going to change it
+            const newParticipantIds = otherUserIds.map(
+                id => new mongoose.Types.ObjectId(id)
+              );
+              
+              // Use findByIdAndUpdate with $push and $each to add the array
+              const updatedGroupChat = await groupChatsCollection.findByIdAndUpdate(
+                groupId,
+                { $push: { participants: { $each: newParticipantIds } } },
+                { new: true } // Returns the updated document
+              );
+            res.json({"message": "success", value: true}) ;
+        }else{
+            res.json({"message": "only admin can do that", value: false}) ;
+        }
+    }catch(err){
+        console.log(`The error occured in /add-member-to-group ${err}`)
+        res.json({message: "error occured", value: false}) ;
+    }
+}) ;
+
+
+router.get('/search/:username', async (req: Request, res: Response) => {
+    try {
+        // If you need to remove a leading character, do it explicitly.
+        // For example, if the username parameter starts with a colon,
+        // you can remove it with substring(1) otherwise, use it directly.
+        const username = req.params.username.startsWith(':')
+            ? req.params.username.substring(1)
+            : req.params.username;
+            
+        // Create a regex for case-insensitive matching.
+        // Adjust the regex pattern as needed (e.g., adding ^ to match beginning).
+        const regex = new RegExp(`^${username}`, "i");
+
+        // Use .limit(5) to get only the first 5 matching documents.
+        const usernames = await UserCollection.find({ username: { $regex: regex } }).limit(5);
+
+        res.json({ message: "got it", value: usernames });
+    } catch (err) {
+        console.log(`The error occurred in search: ${err}`);
+        res.status(500).json({ message: "error occurred", value: false });
+    }
+});
 
 
 export default router ;

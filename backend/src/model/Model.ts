@@ -34,6 +34,7 @@ const groupChats = new mongoose.Schema({
 const groupMessages = new mongoose.Schema({
     sender: {type: mongoose.Schema.Types.ObjectId, ref: 'Users', require: true},
     reciever: {type: mongoose.Schema.Types.ObjectId, ref: 'groupChats', require: true},
+    message: {type: String, require: true},
     seenBy: [{type: mongoose.Schema.Types.ObjectId, ref: 'Users', require: true}],
     time: {type: Date, default: Date.now}
 })
